@@ -20,9 +20,9 @@ logger = logging.getLogger(__name__)
 
 
 class AccessTokenClient(BaseClient):
-    host = 'api.amazon.com'
+    host = os.environ.get('AMAZON_HOST', 'api.amazon.com')
     grant_type = 'refresh_token'
-    path = '/auth/o2/token'
+    path = os.environ.get('GET_TOKEN_PATH', '/auth/o2/token')
 
     def __init__(self, refresh_token=None, credentials=None):
         self.cred = Credentials(refresh_token, credentials)
