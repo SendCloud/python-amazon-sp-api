@@ -21,6 +21,13 @@ from sp_api.base.credential_provider import CredentialProvider
 log = logging.getLogger(__name__)
 
 role_cache = TTLCache(maxsize=int(os.environ.get('SP_API_AUTH_CACHE_SIZE', 10)), ttl=3200)
+sit_env = os.environ.get("SIT_ENV")
+if sit_env:
+    role_cache['TEST'] = {
+        'SessionToken': 'test_session_token',
+        'AccessKeyId': 'test_access_key_id',
+        'SecretAccessKey': 'test_secret_access_key',
+    }
 
 
 class Client(BaseClient):
@@ -57,6 +64,8 @@ class Client(BaseClient):
         self.version = version
 
     def _get_cache_key(self, token_flavor=''):
+        if sit_env:
+            return 'TEST'
         return 'role_' + hashlib.md5(
             (token_flavor + self._auth.cred.refresh_token).encode('utf-8')
         ).hexdigest()
@@ -125,13 +134,15 @@ class Client(BaseClient):
 
         if add_marketplace:
             self._add_marketplaces(data if self.method in ('POST', 'PUT') else params)
-
+        auth = None
+        if not os.environ.get('SIT_ENV'):
+            auth = self._sign_request()
         res = request(self.method,
                       self.endpoint + self._check_version(path),
                       params=params,
                       data=json.dumps(data) if data and self.method in ('POST', 'PUT', 'PATCH') else None,
                       headers=headers or self.headers,
-                      auth=self._sign_request(),
+                      auth=auth,
                       proxies=self.proxies)
         return self._check_response(res, res_no_data, bulk)
 
