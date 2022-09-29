@@ -48,13 +48,14 @@ class Client(BaseClient):
             aws_access_key_id=self.credentials.aws_access_key,
             aws_secret_access_key=self.credentials.aws_secret_key
         )
-        self.endpoint = marketplace.endpoint
         self.marketplace_id = marketplace.marketplace_id
         self.region = marketplace.region
         self.restricted_data_token = restricted_data_token
         self._auth = AccessTokenClient(refresh_token=refresh_token, credentials=self.credentials)
         self.proxies = proxies
         self.version = version
+        self.endpoint = os.environ.get('AMAZON_HOST', marketplace.endpoint)
+        self.scheme = os.environ.get('HTTP_SCHEMA', 'https://')
 
     def _get_cache_key(self, token_flavor=''):
         return 'role_' + hashlib.md5(
