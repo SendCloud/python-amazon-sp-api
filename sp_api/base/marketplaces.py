@@ -42,6 +42,7 @@ BASE_URL = "https://sellingpartnerapi"
 if AwsEnv(AWS_ENVIRONMENT) == AwsEnv.SANDBOX:
     BASE_URL = "https://sandbox.sellingpartnerapi"
 
+TEST_URL = os.getenv("TEST_MARKETPLACE_URL", "http://example.com")
 
 class Marketplaces(Enum):
     """Enumeration for MWS marketplaces, containing endpoints and marketplace IDs.
@@ -74,6 +75,7 @@ class Marketplaces(Enum):
     BR = (f"{BASE_URL}-na.amazon.com", "A2Q3Y263D00KWC", "us-east-1")
     CA = (f"{BASE_URL}-na.amazon.com", "A2EUQ1WTGCTBG2", "us-east-1")
     MX = (f"{BASE_URL}-na.amazon.com", "A1AM78C64UM0Y8", "us-east-1")
+    TS = (TEST_URL, 'TEST', 'eu-west1')
 
     def __init__(self, endpoint, marketplace_id, region):
         self.endpoint = endpoint

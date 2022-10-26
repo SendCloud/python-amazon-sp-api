@@ -21,6 +21,13 @@ from sp_api.base.credential_provider import CredentialProvider
 log = logging.getLogger(__name__)
 
 role_cache = TTLCache(maxsize=int(os.environ.get('SP_API_AUTH_CACHE_SIZE', 10)), ttl=3200)
+sit_env = os.environ.get("SIT_ENV")
+if sit_env:
+    role_cache['TEST'] = {
+        'SessionToken': 'test_session_token',
+        'AccessKeyId': 'test_access_key_id',
+        'SecretAccessKey': 'test_secret_access_key',
+    }
 
 
 class Client(BaseClient):
@@ -51,7 +58,6 @@ class Client(BaseClient):
             aws_access_key_id=self.credentials.aws_access_key,
             aws_secret_access_key=self.credentials.aws_secret_key
         )
-        self.endpoint = marketplace.endpoint
         self.marketplace_id = marketplace.marketplace_id
         self.region = marketplace.region
         self.restricted_data_token = restricted_data_token
@@ -59,8 +65,12 @@ class Client(BaseClient):
         self.proxies = proxies
         self.timeout = timeout
         self.version = version
+        self.endpoint = os.environ.get('AMAZON_HOST', marketplace.endpoint)
+        self.scheme = os.environ.get('HTTP_SCHEMA', '')
 
     def _get_cache_key(self, token_flavor=''):
+        if sit_env:
+            return 'TEST'
         return 'role_' + hashlib.md5(
             (token_flavor + self._auth.cred.refresh_token).encode('utf-8')
         ).hexdigest()
@@ -127,18 +137,20 @@ class Client(BaseClient):
             data = {}
 
         # Note: The use of isinstance here is to support request schemas that are an array at the
-        # top level, eg get_product_fees_estimate 
+        # top level, eg get_product_fees_estimate
         self.method = params.pop('method', data.pop('method', 'GET') if isinstance(data, dict) else 'GET')
 
         if add_marketplace:
             self._add_marketplaces(data if self.method in ('POST', 'PUT') else params)
-
+        auth = None
+        if not os.environ.get('SIT_ENV'):
+            auth = self._sign_request()
         res = request(self.method,
-                      self.endpoint + self._check_version(path),
+                      self.scheme + self.endpoint + self._check_version(path),
                       params=params,
                       data=json.dumps(data) if data and self.method in ('POST', 'PUT', 'PATCH') else None,
                       headers=headers or self.headers,
-                      auth=self._sign_request(),
+                      auth=auth,
                       timeout=self.timeout,
                       proxies=self.proxies)
         return self._check_response(res, res_no_data, bulk, wrap_list)
