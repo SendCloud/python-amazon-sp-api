@@ -1,12 +1,12 @@
 import hashlib
 import json
-import re
 from datetime import datetime
 import logging
 import os
 from json import JSONDecodeError
 
 import boto3
+from botocore.config import Config
 from cachetools import TTLCache
 from requests import request
 
@@ -46,25 +46,37 @@ class Client(BaseClient):
             credentials=None,
             restricted_data_token=None,
             proxies=None,
+            verify=True,
             timeout=None,
-            version=None
+            version=None,
+            credential_providers=None,
     ):
         if os.environ.get('SP_API_DEFAULT_MARKETPLACE', None):
             marketplace = Marketplaces[os.environ.get('SP_API_DEFAULT_MARKETPLACE')]
-        self.credentials = CredentialProvider(account, credentials).credentials
+        self.credentials = CredentialProvider(
+            account,
+            credentials,
+            credential_providers=credential_providers,
+        ).credentials
+        boto_config = Config(
+            proxies=proxies,
+        )
         session = boto3.session.Session()
         self.boto3_client = session.client(
             'sts',
             aws_access_key_id=self.credentials.aws_access_key,
-            aws_secret_access_key=self.credentials.aws_secret_key
+            aws_secret_access_key=self.credentials.aws_secret_key,
+            config=boto_config,
+            verify=verify,
         )
         self.marketplace_id = marketplace.marketplace_id
         self.region = marketplace.region
         self.restricted_data_token = restricted_data_token
-        self._auth = AccessTokenClient(refresh_token=refresh_token, credentials=self.credentials)
+        self._auth = AccessTokenClient(refresh_token=refresh_token, credentials=self.credentials, proxies=proxies, verify=verify)
         self.proxies = proxies
         self.timeout = timeout
         self.version = version
+        self.verify = verify
         self.endpoint = os.environ.get('AMAZON_HOST', marketplace.endpoint)
         self.scheme = os.environ.get('HTTP_SCHEMA', '')
 
@@ -152,7 +164,8 @@ class Client(BaseClient):
                       headers=headers or self.headers,
                       auth=auth,
                       timeout=self.timeout,
-                      proxies=self.proxies)
+                      proxies=self.proxies,
+                      verify=self.verify)
         return self._check_response(res, res_no_data, bulk, wrap_list)
 
     def _check_response(self, res, res_no_data: bool = False, bulk: bool = False,
@@ -163,12 +176,15 @@ class Client(BaseClient):
             except JSONDecodeError:
                 js = {'status_code': res.status_code}
         else:
-            js = res.json() or {}
+            try:
+                js = res.json() or {}
+            except JSONDecodeError:
+                js = {}
 
         if isinstance(js, list):
             if wrap_list:
                 # Support responses that are an array at the top level, eg get_product_fees_estimate
-                js = dict(payload = js)
+                js = dict(payload=js)
             else:
                 js = js[0]
 

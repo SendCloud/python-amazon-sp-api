@@ -1,8 +1,8 @@
-import urllib.parse
 import zlib
 from collections import abc
 from datetime import datetime
 from io import BytesIO, StringIO
+from typing import Optional
 
 import requests
 
@@ -12,7 +12,7 @@ from sp_api.base import Client, sp_endpoint, fill_query_params, ApiResponse, Mar
 class Reports(Client):
     """
     Reports SP-API Client
-    :link: 
+    :link:
 
     The Selling Partner API for Reports lets you retrieve and manage a variety of reports that can help selling partners manage their businesses.
     """
@@ -48,7 +48,7 @@ class Reports(Client):
             key pageSize: int optional	The maximum number of reports to return in a single call.
             key createdSince: str or datetime optional	The earliest report creation date and time for reports to include in the response, in ISO 8601 date time format. The default is 90 days ago. Reports are retained for a maximum of 90 days.	string (date-time)	-
             key	createdUntil: str or datetime optional	The latest report creation date and time for reports to include in the response, in ISO 8601 date time format. The default is now.	string (date-time)	-
-            key nextToken: str optional	A string token returned in the response to your previous request. nextToken is returned when the number of results exceeds the specified pageSize value. To get the next page of results, call the getReports operation and include this token as the only parameter. Specifying nextToken with any other parameters will cause the request to fail.	string	-
+            key nextToken: str optional	A stringget_report_document token returned in the response to your previous request. nextToken is returned when the number of results exceeds the specified pageSize value. To get the next page of results, call the getReports operation and include this token as the only parameter. Specifying nextToken with any other parameters will cause the request to fail.	string	-
 
 
         Returns:
@@ -326,9 +326,9 @@ class Reports(Client):
 
     @sp_endpoint('/reports/2021-06-30/documents/{}', method='GET')
     def get_report_document(self, reportDocumentId, download: bool = False, file=None,
-                            character_code: str = 'iso-8859-1', **kwargs) -> ApiResponse:
+                            character_code: Optional[str] = None, **kwargs) -> ApiResponse:
         """
-        get_report_document(self, document_id, decrypt: bool = False, file=None, character_code: str = 'iso-8859-1', ** kwargs) -> ApiResponse
+        get_report_document(self, document_id, decrypt: bool = False, file=None, character_code: Optional[str] = None, **kwargs) -> ApiResponse
         Returns the information required for retrieving a report document's contents. This includes a presigned URL for the report document as well as the information required to decrypt the document's contents.
 
         If decrypt = True the report will automatically be loaded and decrypted/unpacked
@@ -356,24 +356,52 @@ class Reports(Client):
         Args:
             reportDocumentId: str | the document to load
             download: bool | flag to automatically download a report
-            file: If passed, will save the document to the file specified. Only valid if decrypt=True
-            character_code: If passed, will be a file with the specified character code.  The default is 'iso-8859-1'. Only valid if decrypt=True
+            file: If passed, will save the document to the file specified.
+                  Only valid if decrypt=True
+            character_code: If passed, will be a file with the specified character code.
+                            The default is the Content-Encoding in the response while
+                            obtaining the document from the document URL.
+                            It fallbacks to 'iso-8859-1' if no encoding was found.
+                            Only valid if decrypt=True.
 
         Returns:
              ApiResponse
-        """
-        res = self._request(fill_query_params(kwargs.pop('path'), reportDocumentId), add_marketplace=False)
+        """  # noqa: E501
+        res = self._request(fill_query_params(kwargs.pop(
+            'path'), reportDocumentId), add_marketplace=False)
         if download or file or ('decrypt' in kwargs and kwargs['decrypt']):
-            document = requests.get(res.payload.get('url')).content
+            document_response = requests.get(
+                res.payload.get('url'),
+                proxies=self.proxies,
+                verify=self.verify,
+            )
+            document = document_response.content
+            if not character_code:
+                character_code = (
+                    document_response.encoding
+                    if document_response and document_response.encoding
+                    else 'iso-8859-1'
+                )
+                if character_code.lower() == 'windows-31j':
+                    character_code = 'cp932'
             if 'compressionAlgorithm' in res.payload:
-                document = zlib.decompress(bytearray(document), 15 + 32)
-            document = document.decode(character_code)
+                try:
+                    document = zlib.decompress(bytearray(document), 15 + 32)
+                except Exception as e:
+                    pass
+
+            if character_code:
+                try:
+                    decoded_document = document.decode(character_code)
+                except Exception as e:
+                    decoded_document = document
+
             if download:
                 res.payload.update({
-                    'document': document
+                    'document': decoded_document,
                 })
             if file:
-                self._handle_file(file, document, character_code)
+                self._handle_file(file, decoded_document, character_code)
         return res
 
     @staticmethod
